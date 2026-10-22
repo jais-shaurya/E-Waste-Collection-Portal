@@ -224,7 +224,7 @@ pipeline {
             steps {
                 withCredentials([
                     file(
-                        credentialsId: 'kubeconfig',
+                        credentialsId: 'kubeconfig-global',
                         variable: 'KUBECONFIG_FILE'
                     )
                 ]) {
