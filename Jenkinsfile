@@ -6,19 +6,18 @@ pipeline {
         timestamps()
         timeout(time: 45, unit: 'MINUTES')
         disableConcurrentBuilds()
-        skipDefaultCheckout(false)
     }
 
     parameters {
         choice(
             name: 'RELEASE_MODE',
             choices: ['STABLE', 'FAULTY_ROLLBACK_DEMO'],
-            description: 'Choose a normal release or demonstrate automatic rollback.'
+            description: 'Choose a stable deployment or demonstrate automatic rollback.'
         )
         booleanParam(
             name: 'DEPLOY_TO_KUBERNETES',
             defaultValue: true,
-            description: 'Deploy to Docker Desktop Kubernetes after pushing the image.'
+            description: 'Deploy the image to Docker Desktop Kubernetes.'
         )
     }
 
@@ -29,6 +28,7 @@ pipeline {
         K8S_SERVICE = 'ewaste-portal-service'
         K8S_NAMESPACE = 'default'
         K8S_CONTEXT = 'docker-desktop'
+        K8S_NODE_PORT = '30086'
         SMOKE_CONTAINER = 'ewaste-portal-smoke'
         SMOKE_PORT = '18082'
     }
@@ -41,7 +41,7 @@ pipeline {
                         powershell '''
                             $ErrorActionPreference = 'Stop'
 
-                            if (-not (Test-Path 'index.html')) {
+                            if (-not (Test-Path 'index.html' -PathType Leaf)) {
                                 throw 'Required file missing: index.html'
                             }
 
@@ -52,10 +52,10 @@ pipeline {
                             }
 
                             if ($html.Length -lt 100) {
-                                throw 'index.html appears to be empty or incomplete.'
+                                throw 'index.html appears incomplete.'
                             }
 
-                            Write-Output 'HTML source validation passed.'
+                            Write-Output 'HTML validation passed.'
                         '''
                     }
                 }
@@ -65,13 +65,11 @@ pipeline {
                         powershell '''
                             $ErrorActionPreference = 'Stop'
 
-                            $requiredFiles = @(
+                            foreach ($file in @(
                                 'Dockerfile',
                                 'Jenkinsfile',
                                 'deployment.yaml'
-                            )
-
-                            foreach ($file in $requiredFiles) {
+                            )) {
                                 if (-not (Test-Path $file -PathType Leaf)) {
                                     throw "Required file missing: $file"
                                 }
@@ -79,19 +77,25 @@ pipeline {
 
                             $dockerfile = Get-Content 'Dockerfile' -Raw
                             if ($dockerfile -notmatch '(?im)^FROM\\s+nginx:alpine') {
-                                throw 'Dockerfile does not use the expected nginx:alpine base image.'
+                                throw 'Expected nginx:alpine in Dockerfile.'
                             }
 
                             $manifest = Get-Content 'deployment.yaml' -Raw
+
                             if ($manifest -notmatch '(?m)^kind:\\s*Deployment\\s*$') {
                                 throw 'deployment.yaml must contain a Deployment.'
                             }
+
                             if ($manifest -notmatch '(?m)^kind:\\s*Service\\s*$') {
                                 throw 'deployment.yaml must contain a Service.'
                             }
 
+                            if ($manifest -notmatch '(?m)^\\s*nodePort:\\s*30086\\s*$') {
+                                throw 'Expected Service NodePort 30086.'
+                            }
+
                             Write-Output 'Configuration validation passed.'
-                            Write-Output 'README.md is intentionally not required.'
+                            Write-Output 'README.md is not required.'
                         '''
                     }
                 }
@@ -104,26 +108,25 @@ pipeline {
                     $ErrorActionPreference = 'Stop'
 
                     $docker = (Get-Command docker.exe -ErrorAction Stop).Source
-                    $imageVersion = "$env:DOCKER_IMAGE`:$env:BUILD_NUMBER"
-                    $imageLatest = "$env:DOCKER_IMAGE`:latest"
+                    $versionImage = "$env:DOCKER_IMAGE`:$env:BUILD_NUMBER"
+                    $latestImage = "$env:DOCKER_IMAGE`:latest"
 
-                    & $docker build -t $imageVersion -t $imageLatest .
+                    & $docker build -t $versionImage -t $latestImage .
                     if ($LASTEXITCODE -ne 0) {
                         throw 'Docker image build failed.'
                     }
 
-                    Write-Output "Built image: $imageVersion"
-
-                    # Remove an old smoke-test container if it exists.
                     & $docker rm -f $env:SMOKE_CONTAINER 2>$null
                     $LASTEXITCODE = 0
 
                     try {
-                        & $docker run -d --name $env:SMOKE_CONTAINER `
-                            -p "$($env:SMOKE_PORT):80" $imageVersion
+                        & $docker run -d `
+                            --name $env:SMOKE_CONTAINER `
+                            -p "$($env:SMOKE_PORT):80" `
+                            $versionImage
 
                         if ($LASTEXITCODE -ne 0) {
-                            throw 'Could not start the Docker smoke-test container.'
+                            throw 'Could not start the smoke-test container.'
                         }
 
                         Start-Sleep -Seconds 5
@@ -168,45 +171,43 @@ pipeline {
                         New-Item -ItemType Directory -Path $authDir -Force | Out-Null
 
                         try {
-                            # Write the token without a UTF-8 BOM.
                             [System.IO.File]::WriteAllText(
                                 $tokenFile,
                                 $env:DH_TOKEN + "`n",
                                 $utf8NoBom
                             )
 
-                            # Pass the token through stdin redirection, not the command line.
                             $loginCommand = '"' + $docker +
                                 '" --config "' + $authDir +
                                 '" login --username "' + $env:DH_USER +
                                 '" --password-stdin < "' + $tokenFile + '"'
 
                             & $cmd /d /s /c $loginCommand
+
                             if ($LASTEXITCODE -ne 0) {
                                 throw 'Docker Hub login failed. Check dockerhub-credentials.'
                             }
 
-                            $imageVersion = "$env:DOCKER_IMAGE`:$env:BUILD_NUMBER"
-                            $imageLatest = "$env:DOCKER_IMAGE`:latest"
+                            $versionImage = "$env:DOCKER_IMAGE`:$env:BUILD_NUMBER"
+                            $latestImage = "$env:DOCKER_IMAGE`:latest"
 
-                            & $docker --config $authDir push $imageVersion
+                            & $docker --config $authDir push $versionImage
                             if ($LASTEXITCODE -ne 0) {
-                                throw "Failed to push $imageVersion"
+                                throw "Failed to push $versionImage"
                             }
 
-                            & $docker --config $authDir push $imageLatest
+                            & $docker --config $authDir push $latestImage
                             if ($LASTEXITCODE -ne 0) {
-                                throw "Failed to push $imageLatest"
+                                throw "Failed to push $latestImage"
                             }
 
-                            Write-Output 'Both Docker Hub image tags were pushed successfully.'
+                            Write-Output 'Both Docker Hub image tags pushed successfully.'
                         }
                         finally {
-                            # Attempt logout and always remove temporary authentication files.
                             & $docker --config $authDir logout 2>$null
                             $LASTEXITCODE = 0
 
-                            Remove-Item -Path $authDir -Recurse -Force `
+                            Remove-Item $authDir -Recurse -Force `
                                 -ErrorAction SilentlyContinue
                         }
                     '''
@@ -232,39 +233,44 @@ pipeline {
                         $ErrorActionPreference = 'Stop'
                         $env:KUBECONFIG = $env:KUBECONFIG_FILE
 
-                        $context = $env:K8S_CONTEXT
-                        $namespace = $env:K8S_NAMESPACE
-                        $image = "$env:DOCKER_IMAGE`:$env:BUILD_NUMBER"
+                        $versionImage = "$env:DOCKER_IMAGE`:$env:BUILD_NUMBER"
 
-                        & kubectl.exe --context=$context `
-                            --namespace=$namespace apply -f deployment.yaml
+                        & kubectl.exe --context=$env:K8S_CONTEXT `
+                            --namespace=$env:K8S_NAMESPACE `
+                            apply -f deployment.yaml
+
                         if ($LASTEXITCODE -ne 0) {
-                            throw 'Failed to apply deployment.yaml.'
+                            throw 'Applying deployment.yaml failed. Check the NodePort and manifest.'
                         }
 
-                        & kubectl.exe --context=$context `
-                            --namespace=$namespace set image `
-                            "deployment/$env:K8S_DEPLOYMENT" `
-                            "$env:K8S_CONTAINER=$image"
+                        & kubectl.exe --context=$env:K8S_CONTEXT `
+                            --namespace=$env:K8S_NAMESPACE `
+                            set image "deployment/$env:K8S_DEPLOYMENT" `
+                            "$env:K8S_CONTAINER=$versionImage"
+
                         if ($LASTEXITCODE -ne 0) {
-                            throw 'Failed to update the Kubernetes deployment image.'
+                            throw 'Updating the Kubernetes image failed.'
                         }
 
-                        & kubectl.exe --context=$context `
-                            --namespace=$namespace rollout status `
-                            "deployment/$env:K8S_DEPLOYMENT" --timeout=180s
+                        & kubectl.exe --context=$env:K8S_CONTEXT `
+                            --namespace=$env:K8S_NAMESPACE `
+                            rollout status "deployment/$env:K8S_DEPLOYMENT" `
+                            --timeout=180s
+
                         if ($LASTEXITCODE -ne 0) {
                             throw 'Kubernetes rollout failed.'
                         }
 
-                        & kubectl.exe --context=$context `
-                            --namespace=$namespace get deployment,pods,service
+                        & kubectl.exe --context=$env:K8S_CONTEXT `
+                            --namespace=$env:K8S_NAMESPACE `
+                            get deployment,pods,service
+
                         if ($LASTEXITCODE -ne 0) {
-                            throw 'Could not verify Kubernetes resources.'
+                            throw 'Kubernetes resource verification failed.'
                         }
 
-                        Write-Output "Stable deployment succeeded with image $image."
-                        Write-Output 'Portal NodePort: http://localhost:30082'
+                        Write-Output "Deployment succeeded with image $versionImage."
+                        Write-Output 'Portal URL: http://localhost:30086'
                     '''
                 }
             }
@@ -280,7 +286,7 @@ pipeline {
             steps {
                 withCredentials([
                     file(
-                        credentialsId: 'kubeconfig',
+                        credentialsId: 'kubeconfig-global',
                         variable: 'KUBECONFIG_FILE'
                     )
                 ]) {
@@ -290,75 +296,78 @@ pipeline {
 
                         $context = $env:K8S_CONTEXT
                         $namespace = $env:K8S_NAMESPACE
+                        $deployment = "deployment/$env:K8S_DEPLOYMENT"
 
-                        # Ensure a valid deployment exists before the rollback demonstration.
                         & kubectl.exe --context=$context `
                             --namespace=$namespace apply -f deployment.yaml
+
                         if ($LASTEXITCODE -ne 0) {
-                            throw 'Could not apply the initial Kubernetes manifest.'
+                            throw 'Applying the Kubernetes manifest failed.'
                         }
 
-                        $stableImage = "$env:DOCKER_IMAGE`:$env:BUILD_NUMBER"
+                        $validImage = "$env:DOCKER_IMAGE`:$env:BUILD_NUMBER"
 
                         & kubectl.exe --context=$context `
-                            --namespace=$namespace set image `
-                            "deployment/$env:K8S_DEPLOYMENT" `
-                            "$env:K8S_CONTAINER=$stableImage"
+                            --namespace=$namespace set image $deployment `
+                            "$env:K8S_CONTAINER=$validImage"
+
                         if ($LASTEXITCODE -ne 0) {
-                            throw 'Could not establish the valid image before the demo.'
+                            throw 'Setting the valid image failed.'
                         }
 
                         & kubectl.exe --context=$context `
-                            --namespace=$namespace rollout status `
-                            "deployment/$env:K8S_DEPLOYMENT" --timeout=180s
+                            --namespace=$namespace rollout status $deployment `
+                            --timeout=180s
+
                         if ($LASTEXITCODE -ne 0) {
-                            throw 'The initial valid deployment did not become ready; refusing to run the faulty demo.'
+                            throw 'The valid deployment did not become ready.'
                         }
 
-                        # Deliberately use a nonexistent tag to trigger a failed rollout.
                         $badImage = "$env:DOCKER_IMAGE`:deliberately-missing-tag"
 
                         & kubectl.exe --context=$context `
-                            --namespace=$namespace set image `
-                            "deployment/$env:K8S_DEPLOYMENT" `
+                            --namespace=$namespace set image $deployment `
                             "$env:K8S_CONTAINER=$badImage"
+
                         if ($LASTEXITCODE -ne 0) {
-                            throw 'Could not apply the intentionally faulty image.'
+                            throw 'Could not apply the deliberately faulty image.'
                         }
 
                         & kubectl.exe --context=$context `
-                            --namespace=$namespace rollout status `
-                            "deployment/$env:K8S_DEPLOYMENT" --timeout=90s
+                            --namespace=$namespace rollout status $deployment `
+                            --timeout=90s
 
-                        $faultyRolloutExit = $LASTEXITCODE
+                        $faultyExit = $LASTEXITCODE
 
-                        if ($faultyRolloutExit -eq 0) {
-                            throw 'The intentionally faulty rollout unexpectedly succeeded; rollback demo is inconclusive.'
+                        if ($faultyExit -eq 0) {
+                            throw 'The deliberately faulty rollout unexpectedly succeeded.'
                         }
 
-                        Write-Output 'Faulty rollout detected. Initiating automatic rollback.'
+                        Write-Output 'Faulty rollout detected. Starting automatic rollback.'
 
                         & kubectl.exe --context=$context `
-                            --namespace=$namespace rollout undo `
-                            "deployment/$env:K8S_DEPLOYMENT"
+                            --namespace=$namespace rollout undo $deployment
+
                         if ($LASTEXITCODE -ne 0) {
-                            throw 'Automatic Kubernetes rollback failed.'
+                            throw 'Kubernetes rollback command failed.'
                         }
 
                         & kubectl.exe --context=$context `
-                            --namespace=$namespace rollout status `
-                            "deployment/$env:K8S_DEPLOYMENT" --timeout=180s
+                            --namespace=$namespace rollout status $deployment `
+                            --timeout=180s
+
                         if ($LASTEXITCODE -ne 0) {
-                            throw 'Rollback was issued, but the restored rollout did not become ready.'
+                            throw 'The restored deployment did not become ready.'
                         }
 
                         & kubectl.exe --context=$context `
                             --namespace=$namespace get deployment,pods
+
                         if ($LASTEXITCODE -ne 0) {
-                            throw 'Could not verify resources after rollback.'
+                            throw 'Could not verify the rollback.'
                         }
 
-                        Write-Output 'Rollback succeeded. The previous working revision is restored.'
+                        Write-Output 'Rollback completed and rollout is healthy.'
                     '''
                 }
             }
@@ -366,12 +375,10 @@ pipeline {
 
         stage('Deployment Skipped') {
             when {
-                expression {
-                    !params.DEPLOY_TO_KUBERNETES
-                }
+                expression { !params.DEPLOY_TO_KUBERNETES }
             }
             steps {
-                echo 'Kubernetes deployment was disabled. Image build and Docker Hub push still run.'
+                echo 'Kubernetes deployment disabled; image build and push still run.'
             }
         }
 
@@ -387,24 +394,27 @@ pipeline {
 
     post {
         success {
-            echo "E-Waste pipeline completed successfully. Release mode: ${params.RELEASE_MODE}"
+            echo "E-Waste pipeline completed successfully: ${params.RELEASE_MODE}"
         }
+
         failure {
-            echo "E-Waste pipeline failed. Review the first failed stage in Console Output."
+            echo 'E-Waste pipeline failed. Review the first failed stage in Console Output.'
         }
+
         always {
             powershell '''
                 $ErrorActionPreference = 'Continue'
-                $dockerCommand = Get-Command docker.exe -ErrorAction SilentlyContinue
 
-                if ($dockerCommand) {
-                    & $dockerCommand.Source rm -f $env:SMOKE_CONTAINER 2>$null
+                $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
+                if ($docker) {
+                    & $docker.Source rm -f $env:SMOKE_CONTAINER 2>$null
                     $LASTEXITCODE = 0
                 }
 
                 $authDir = Join-Path $env:WORKSPACE ".docker-auth-$env:BUILD_NUMBER"
                 if (Test-Path $authDir) {
-                    Remove-Item $authDir -Recurse -Force -ErrorAction SilentlyContinue
+                    Remove-Item $authDir -Recurse -Force `
+                        -ErrorAction SilentlyContinue
                 }
             '''
         }
