@@ -1,0 +1,147 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>E-Waste Collection and Recycling Portal</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    background: #f2f7f4;
+    color: #20372b;
+}
+header {
+    background: #176b45;
+    color: white;
+    text-align: center;
+    padding: 28px 15px;
+}
+main {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 0 18px;
+}
+h2 { color: #176b45; }
+.dashboard {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+.stat, .centre, .schedule {
+    background: white;
+    padding: 18px;
+    border-radius: 10px;
+    margin-bottom: 15px;
+    border: 1px solid #d6e5da;
+}
+.stat strong {
+    display: block;
+    font-size: 28px;
+    color: #176b45;
+}
+.centres {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+}
+.status {
+    font-weight: bold;
+    color: #176b45;
+}
+footer {
+    text-align: center;
+    padding: 20px;
+    background: #dcebe1;
+}
+@media(max-width:650px) {
+    .dashboard, .centres { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header>
+    <h1>E-Waste Collection and Recycling Portal</h1>
+    <p>Responsible disposal today, a cleaner city tomorrow.</p>
+</header>
+
+<main>
+<section>
+    <h2>Processing Status Dashboard</h2>
+    <div class="dashboard">
+        <div class="stat">Items Collected<strong>248</strong></div>
+        <div class="stat">Awaiting Processing<strong>36</strong></div>
+        <div class="stat">Under Recycling<strong>72</strong></div>
+        <div class="stat">Successfully Recycled<strong>140</strong></div>
+    </div>
+</section>
+
+<section>
+<h2>Collection Centres</h2>
+<div class="centres">
+
+<div class="centre">
+<h3>1. Central Civic Collection Hub</h3>
+<p><b>Location:</b> Central Ward, Green Avenue</p>
+<p><b>Accepts:</b> Mobile phones, laptops, batteries, televisions</p>
+<p><b>Schedule:</b> Monday–Saturday, 9 AM–5 PM</p>
+<p><b>Instructions:</b> Back up and erase personal data. Remove SIM and memory cards.</p>
+<p class="status">Status: Awaiting Processing</p>
+</div>
+
+<div class="centre">
+<h3>2. Northside Resource Centre</h3>
+<p><b>Location:</b> North Ward, Lake Road</p>
+<p><b>Accepts:</b> Laptops, keyboards, mice, mobile phones</p>
+<p><b>Schedule:</b> Tuesday–Sunday, 10 AM–6 PM</p>
+<p><b>Instructions:</b> Remove personal data and tell staff about damaged batteries.</p>
+<p class="status">Status: Under Recycling</p>
+</div>
+
+<div class="centre">
+<h3>3. East Market Drop-off Point</h3>
+<p><b>Location:</b> East Ward, Market Street</p>
+<p><b>Accepts:</b> Phones, chargers, batteries, small appliances</p>
+<p><b>Schedule:</b> Monday–Friday, 8:30 AM–4:30 PM</p>
+<p><b>Instructions:</b> Keep cables separate. Do not use household recycling bins.</p>
+<p class="status">Status: Successfully Recycled</p>
+</div>
+
+<div class="centre">
+<h3>4. South Municipal Depot</h3>
+<p><b>Location:</b> South Ward, River Road</p>
+<p><b>Accepts:</b> Televisions, monitors, desktops, laptops</p>
+<p><b>Schedule:</b> Wednesday–Sunday, 9 AM–3 PM</p>
+<p><b>Instructions:</b> Transport screens upright and protect them from impact.</p>
+<p class="status">Status: Awaiting Processing</p>
+</div>
+
+<div class="centre">
+<h3>5. Westside Battery and Device Point</h3>
+<p><b>Location:</b> West Ward, Orchard Lane</p>
+<p><b>Accepts:</b> Rechargeable batteries, phones, tablets, laptops</p>
+<p><b>Schedule:</b> Monday–Saturday, 11 AM–7 PM</p>
+<p><b>Instructions:</b> Cover exposed battery terminals. Never put batteries in general waste.</p>
+<p class="status">Status: Under Recycling</p>
+</div>
+
+</div>
+</section>
+
+<section class="schedule">
+<h2>Updated Collection Schedule</h2>
+<ul>
+<li>24 October: Central Civic Hub — extended collection until 6 PM.</li>
+<li>25 October: Northside Centre — phone and laptop collection drive.</li>
+<li>28 October: South Municipal Depot — television and monitor collection.</li>
+</ul>
+<p><b>Administrator notice:</b> These are demonstration updates. In a production system, authorised administrators would publish schedule changes.</p>
+</section>
+</main>
+
+<footer>
+E-Waste Collection and Recycling Portal | Coursework Project
+</footer>
+</body>
+</html>

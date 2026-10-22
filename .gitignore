@@ -1,0 +1,25 @@
+
+# Temporary Docker authentication files
+.docker-auth-*/
+.docker-config-*/
+.docker-token-*
+stdin.txt
+
+# Environment and secret files
+.env
+.env.*
+!.env.example
+.kube/
+kubeconfig
+config.json
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# IDE and operating system files
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
